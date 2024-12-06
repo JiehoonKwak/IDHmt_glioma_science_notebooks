@@ -1,0 +1,162 @@
+---
+jupyter:
+  kernelspec:
+    display_name: R
+    language: R
+    name: ir
+---
+
+- R 4.3.3
+
+# Trajectory inference with monocle3 with tumor-associated population
+- OPC + COP + Tumor
+- Load preprocessed h5ad file and convert it to seurat object
+
+```{r}
+suppressPackageStartupMessages({
+    library(monocle3)
+    library(SeuratWrappers)
+    library(mgcv)
+    library(tidyverse)
+    library(Seurat)
+    library(schard)
+    library(here)
+    library(future)
+})
+
+options(future.globals.maxSize = 10000 * 1024^2)
+```
+
+## 1. Convert to Seurat Object
+
+```{r}
+#| vscode: {languageId: r}
+obj <- schard::h5ad2seurat(here('output/annotated_subcluster_embedding.h5ad'))
+obj
+```
+
+```{r}
+#| vscode: {languageId: r}
+Idents(obj) <- obj$cell_type
+obj <- SCTransform(obj)
+```
+
+```{r}
+#| vscode: {languageId: r}
+# topgenes <- read.csv('/Users/jiehoonk/DevHub/mnt/dataset/jw/markers/nmf_topgenes.csv', row.names = 1)
+# topgenes <- head(topgenes, 50)
+# obj <- AddModuleScore(obj, topgenes, name = "NMF_Module_")
+```
+
+## 2. Convert to cds
+
+```{r}
+#| vscode: {languageId: r}
+cds <- as.cell_data_set(obj)
+rowData(cds)$gene_name <- rownames(cds)
+rowData(cds)$gene_short_name <- rowData(cds)$gene_name
+```
+
+```{r}
+#| vscode: {languageId: r}
+cds <- estimate_size_factors(cds)
+cds <- preprocess_cds(cds)
+```
+
+- copy UMAP coordinated calculated with scVI latent space
+
+```{r}
+#| vscode: {languageId: r}
+partitions <- c(rep(1, length(cds@colData@rownames)))
+names(partitions) <- cds@colData@rownames
+partitions <- as.factor(partitions)
+
+cds@clusters$UMAP$partitions <- partitions
+
+list_cluster <- obj@active.ident
+cds@clusters$UMAP$clusters <- list_cluster
+
+cds@int_colData@listData$reducedDims$UMAP <- obj@reductions$Xumap_@cell.embeddings
+```
+
+```{r}
+#| vscode: {languageId: r}
+cds <- cluster_cells(cds, reduction_method = "UMAP")
+```
+
+## 3. Learn Graph
+
+```{r}
+#| vscode: {languageId: r}
+plot_cells(cds, show_trajectory_graph = F, color_cells_by = "partition")
+```
+
+```{r}
+#| vscode: {languageId: r}
+DimPlot(obj, group.by = "cell_type")
+```
+
+```{r}
+#| vscode: {languageId: r}
+cds <- learn_graph(cds, use_partition = FALSE, close_loop = FALSE, learn_graph_control = list(minimal_branch_len = 5))
+```
+
+```{r}
+#| vscode: {languageId: r}
+p1 <- plot_cells(cds, color_cells_by = "cell_type", 
+           label_groups_by_cluster = F, 
+           label_cell_groups = F,
+           label_branch_points = F, 
+           label_roots = F, 
+           label_leaves = F, 
+           alpha = 0.7,
+           cell_size = 0.7,
+           group_label_size = 5)
+p1 <- p1 + 
+  theme(legend.position = "right") +
+  guides(color = guide_legend(title = "Cell Type", override.aes = list(size = 5)))
+p1
+```
+
+## 4. Select root cell
+
+```{r}
+#| vscode: {languageId: r}
+get_earliest_principal_node <- function(cds){
+  cell_ids <- which(colData(cds)[, "cell_type"] == "OPC")
+  
+  closest_vertex <- cds@principal_graph_aux[["UMAP"]]$pr_graph_cell_proj_closest_vertex
+  closest_vertex <- as.matrix(closest_vertex[colnames(cds), ])
+  root_pr_nodes <- igraph::V(principal_graph(cds)[["UMAP"]])$name[as.numeric(names(which.max(table(closest_vertex[cell_ids,]))))]
+  
+  root_pr_nodes
+}
+cds <- order_cells(cds, root_pr_nodes=get_earliest_principal_node(cds))
+```
+
+```{r}
+#| vscode: {languageId: r}
+p2 <- plot_cells(cds, color_cells_by = "pseudotime", 
+           label_groups_by_cluster = F, 
+           label_branch_points = F, 
+           label_roots = T, 
+           label_leaves = F, 
+           group_label_size = 5,
+           alpha = 0.7, 
+           cell_size= 1.5,
+           trajectory_graph_color = '#808F98') 
+p2
+ggsave(here('plot', 'Fig4D.pdf'), p2, device = 'pdf', dpi = 300)
+```
+
+```{r}
+#| vscode: {languageId: r}
+pt <- pseudotime(cds,reduction_method = "UMAP")
+cds$Pseudotime <- pt
+```
+
+```{r}
+#| vscode: {languageId: r}
+write.csv(cds$Pseudotime, here('markers', 'pseudotime.csv'))
+```
+
