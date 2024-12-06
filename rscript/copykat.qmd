@@ -1,0 +1,46 @@
+---
+title: ""
+author: "Jiehoon Kwak"
+date: "`r Sys.Date()`"
+format:
+  pdf:
+    documentclass: article
+    classoption: a4paper,9pt
+    geometry: margin=0.75in
+    code-link: true
+    colorlinks: true
+    highlight-style: github
+execute:
+  cache: true
+  message: false
+mainfont: "Noto Serif KR"
+sansfont: "Noto Sans KR"
+monofont: "D2Coding"
+---
+
+```{r}
+#| label: load-packages
+#| message: false
+library(tidyverse)
+library(janitor)
+library(schard)
+library(copykat)
+library(here)
+```
+
+Set Path
+```{r}
+obj <- schard::h5ad2seurat(here('output/copykat_ready.h5ad'))
+obj
+```
+
+
+```{r}
+raw <- as.matrix(LayerData(obj, layer = 'data'))
+```
+
+```{r}
+copykat.test <- copykat(rawmat=raw, genome="mm10",n.cores=10)
+
+```
+
