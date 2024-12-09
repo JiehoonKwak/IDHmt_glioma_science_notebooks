@@ -8,3 +8,4 @@
 /tmp
 jw_rev.Rproj
 *.h5ad
+.env
