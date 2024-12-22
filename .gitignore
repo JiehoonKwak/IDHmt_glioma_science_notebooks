@@ -5,6 +5,7 @@
 /public
 /ref
 /tmp
+/.venv
 jw_rev.Rproj
 *.h5ad
 .env
