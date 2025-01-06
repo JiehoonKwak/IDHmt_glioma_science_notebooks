@@ -13,3 +13,4 @@ jw_rev.Rproj
 .DS_STORE
 *.loom
 *copykat*
+/notebook/tmp
